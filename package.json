@@ -1,10 +1,10 @@
 {
-  "name": "agenttrail",
+  "name": "plantrail",
   "version": "0.2.0",
-  "description": "Agenttrail Map: local observability for AI coding agents through PLAN.md, file activity and Claude Code hooks. Agenttrail Kitchen is a separate 3D view.",
+  "description": "Local observability for Superpowers plans, file activity and Claude Code hooks.",
   "type": "module",
   "bin": {
-    "agenttrail": "bin/agenttrail.mjs"
+    "plantrail": "bin/plantrail.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -17,9 +17,9 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sodiumsun/agenttrail.git"
+    "url": "git+ssh://git@github.com/nbonneau/plantrail.git"
   },
-  "homepage": "https://github.com/sodiumsun/agenttrail#readme",
+  "homepage": "https://github.com/nbonneau/plantrail#readme",
   "keywords": [
     "ai-agents",
     "claude-code",
