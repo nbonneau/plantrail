@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import os from 'node:os'
 import crypto from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -16,8 +17,6 @@ const argv = process.argv.slice(2)
 let cmd = null
 let repo = process.cwd()
 let port = 5330
-let planDirArg = 'docs/superpowers/plans'
-let ledgerDirArg = '.superpowers/sdd'
 const spawningPaths = new Set()
 let openBrowser = process.stdout.isTTY ? true : false
 let noOpen = false
@@ -28,10 +27,6 @@ for (let i = 0; i < argv.length; i++) {
   if (a === 'init') cmd = 'init'
   else if (a === 'hook') cmd = 'hook'
   else if (a === '--port') port = parseInt(argv[++i], 10)
-  else if (a.startsWith('--plan-dir=')) planDirArg = a.slice('--plan-dir='.length)
-  else if (a === '--plan-dir') planDirArg = argv[++i]
-  else if (a.startsWith('--ledger-dir=')) ledgerDirArg = a.slice('--ledger-dir='.length)
-  else if (a === '--ledger-dir') ledgerDirArg = argv[++i]
   else if (a === '--open') openBrowser = true
   else if (a === '--no-open') { noOpen = true; openBrowser = false }
   else if (a === 'up') cmd = 'up'
@@ -40,16 +35,57 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--print') printFlag = true
   else repo = path.resolve(a)
 }
-const planDir = path.resolve(repo, planDirArg)
-const ledgerDir = path.resolve(repo, ledgerDirArg)
-function availablePlans() {
+// Superpowers writes plans under <session dir>/docs/superpowers/plans and each
+// plan's ledger under <git root>/.superpowers/sdd/<plan>/, so where to look depends
+// on where the agent worked: the start dir, its sub-repos (when it is not a repo
+// itself) and every git worktree of those repos.
+const PLAN_SUBDIRS = ['docs/superpowers/plans', '.superpowers/plans']
+const LEDGER_SUBDIR = '.superpowers/sdd'
+const isGitDir = dir => fs.existsSync(path.join(dir, '.git'))
+function worktreesOf(dir) {
   try {
-    return fs.readdirSync(planDir, { withFileTypes: true })
-      .filter(e => e.isFile() && e.name.endsWith('.md'))
-      .map(e => path.join(planDir, e.name)).sort()
+    return execFileSync('git', ['-C', dir, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n').filter(l => l.startsWith('worktree ')).map(l => l.slice(9)).filter(p => fs.existsSync(p))
   } catch { return [] }
 }
-let planPath = cmd ? '' : availablePlans()[0] || path.join(planDir, '__no_plan_selected__.md')
+// last known execution state per plan — see trackExecution()
+const planRuns = {}
+let rootsCache = { at: 0, roots: [repo] }
+function searchRoots() {
+  if (Date.now() - rootsCache.at < 10000) return rootsCache.roots
+  let repos = [repo]
+  if (!isGitDir(repo)) {
+    try {
+      repos = fs.readdirSync(repo, { withFileTypes: true })
+        .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && isGitDir(path.join(repo, e.name)))
+        .map(e => path.join(repo, e.name))
+    } catch { repos = [] }
+  }
+  const roots = new Set([repo])
+  for (const r of repos) for (const w of worktreesOf(r)) roots.add(w)
+  rootsCache = { at: Date.now(), roots: [...roots] }
+  return rootsCache.roots
+}
+const rootOf = file => searchRoots().filter(r => file.startsWith(r + path.sep)).sort((a, b) => b.length - a.length)[0] || repo
+function listDir(dir, keep) {
+  try { return fs.readdirSync(dir, { withFileTypes: true }).filter(keep).map(e => path.join(dir, e.name)) } catch { return [] }
+}
+function availablePlans() {
+  return searchRoots()
+    .flatMap(root => PLAN_SUBDIRS.flatMap(sub => listDir(path.join(root, sub), e => e.isFile() && e.name.endsWith('.md'))))
+    .sort()
+}
+// every ledger file with the root it lives in — a ledger's plan path is relative to that root
+function ledgerFiles() {
+  return searchRoots().flatMap(root => {
+    const dir = path.join(root, LEDGER_SUBDIR)
+    const files = listDir(dir, e => e.isDirectory()).map(d => path.join(d, 'progress.md'))
+    if (fs.existsSync(path.join(dir, 'progress.md'))) files.push(path.join(dir, 'progress.md'))
+    return files.map(file => ({ file, root }))
+  })
+}
+const trackedDirs = () => searchRoots().flatMap(root => [...PLAN_SUBDIRS, LEDGER_SUBDIR].map(sub => path.join(root, sub)))
+let planPath = cmd ? '' : availablePlans()[0] || path.join(repo, '__no_plan_selected__.md')
 if (cmd === 'init') { installHooks(); process.exit(0) }
 if (cmd === 'up') { await upAll(); process.exit(0) }
 if (cmd === 'autostart') { autostart(); process.exit(0) }
@@ -145,22 +181,19 @@ function parsePlan(text) {
 
 // Superpowers keeps durable plans separate from each plan's SDD ledger. The
 // ledger's identity line binds completion records to the selected plan.
-function completedSuperpowersTasks(planFile) {
-  const files = []
-  try {
-    const entries = fs.readdirSync(ledgerDir, { withFileTypes: true })
-    if (entries.some(e => e.isFile() && e.name === 'progress.md')) files.push(path.join(ledgerDir, 'progress.md'))
-    for (const entry of entries) if (entry.isDirectory()) files.push(path.join(ledgerDir, entry.name, 'progress.md'))
-  } catch {}
-  for (const file of files) {
+function ledgerFor(planFile) {
+  for (const { file, root } of ledgerFiles()) {
     const ledger = safeRead(file)
     const identity = ledger.match(/^# SDD ledger — plan:\s*(.+)$/m)?.[1]?.trim()
-    if (!identity) continue
-    const resolvedIdentity = path.resolve(repo, identity)
-    if (resolvedIdentity !== planFile) continue
-    return new Set([...ledger.matchAll(/^Task\s+(\d+):\s+complete\b/gim)].map(m => Number(m[1])))
+    if (identity && path.resolve(root, identity) === planFile) return { ledger, dir: path.dirname(file), root }
   }
-  return new Set()
+  return null
+}
+const completedIn = ledger => new Set([...ledger.matchAll(/^Task\s+(\d+):\s+complete\b/gim)].map(m => Number(m[1])))
+// with the ledger gone, fall back to what it last said (everything, for an executed plan)
+function completedSuperpowersTasks(planFile) {
+  const found = ledgerFor(planFile)
+  return found !== null ? completedIn(found.ledger) : new Set(planRuns[planFile]?.completed || [])
 }
 
 function parseSuperpowersPlan(text, planFile) {
@@ -358,8 +391,72 @@ function liveRuns() {
 
 // ---------- observed-state persistence (survives daemon restarts) ----------
 // Lives under ~/.plantrail keyed by repo path — never touches the repo itself.
-const stateFile = path.join(os.homedir(), '.plantrail', crypto.createHash('sha1').update(repo).digest('hex').slice(0, 12) + '.json')
+const repoId = crypto.createHash('sha1').update(repo).digest('hex').slice(0, 12)
+const stateFile = path.join(os.homedir(), '.plantrail', repoId + '.json')
+// Superpowers deletes a plan's sdd workspace when the plan is done: a copy is kept in
+// ~/.plantrail/<id>/sdd/<workspace>, refreshed on every change, as the record of what ran.
+const archiveRoot = path.join(os.homedir(), '.plantrail', repoId, 'sdd')
+const ARCHIVE_MAX_FILE = 1024 * 1024
+function archiveSdd(dir, root) {
+  const name = path.basename(dir) + (root === repo ? '' : '@' + path.basename(root))
+  try {
+    fs.cpSync(dir, path.join(archiveRoot, name), { recursive: true, force: true, filter: src => { try { return fs.statSync(src).isDirectory() || fs.statSync(src).size <= ARCHIVE_MAX_FILE } catch { return false } } })
+    return name
+  } catch { return null }
+}
 let stateDirty = false
+// Superpowers deletes a plan's sdd once its final review is clean, so what the ledger last
+// said is remembered here: running (sdd seen) → executed (it vanished). Tasks are counted
+// as the ledger reports them: a task skipped by hand stays "not done" in N/M. Records of
+// plans that no longer exist are dropped with their archive.
+const taskNumbers = text => new Set([...text.matchAll(/^#{2,4}\s+Task\s+(\d+)\s*[:—-]/gim)].map(m => Number(m[1])))
+// where the run is: setup before the first brief, the task being worked (and its fix round), the whole-branch review once
+// its review package exists, or the closing "Final" ledger lines
+function sddPhase(dir, ledger, planTasks, completed) {
+  // before the first task brief is written the run is still reading the plan and ruling on conflicts
+  const started = /^Task\s+\d+:/im.test(ledger) || (() => { try { return fs.readdirSync(dir).some(f => /^task-\d+-brief\.md$/.test(f)) } catch { return false } })()
+  if (!started) return 'setup'
+  const skipped = new Set([...ledger.matchAll(/^.*\bTask\s+(\d+)\b.*\bskipped\b/gim)].map(m => Number(m[1])))
+  const highest = completed.length ? completed[completed.length - 1] : -1
+  const next = [...planTasks].sort((a, b) => a - b).find(n => n > highest && !skipped.has(n))
+  if (next !== undefined) {
+    const fix = [...ledger.matchAll(new RegExp(`^Task\\s+${next}:\\s+fix round (\\d+)/(\\d+)`, 'gim'))].pop()
+    return fix ? `Task ${next} · fix round ${fix[1]}/${fix[2]}` : `Task ${next}`
+  }
+  if (/^Final\b/im.test(ledger)) return 'closing'
+  const ranges = n => ledger.match(new RegExp(`^Task\\s+${n}:\\s+complete \\(commits (\\w+)\\.\\.(\\w+)`, 'im'))
+  const first = ranges(completed[0]), last = ranges(completed[completed.length - 1])
+  const whole = first && last && `review-${first[1]}..${last[2]}.diff`
+  return whole && fs.existsSync(path.join(dir, whole)) ? 'final review' : 'tasks done'
+}
+const newestMtime = dir => { try { return Math.max(...fs.readdirSync(dir).map(f => fs.statSync(path.join(dir, f)).mtimeMs)) } catch { return 0 } }
+function trackExecution() {
+  for (const file of availablePlans()) {
+    const found = ledgerFor(file)
+    const rec = planRuns[file]
+    if (found !== null) {
+      const planTasks = taskNumbers(safeRead(file))
+      const completed = [...completedIn(found.ledger)].sort((a, b) => a - b)
+      const lines = found.ledger.split('\n').map(l => l.trim()).filter(Boolean)
+      const next = {
+        state: 'running', total: planTasks.size, done: completed.length, completed,
+        phase: sddPhase(found.dir, found.ledger, planTasks, completed), lastLine: lines[lines.length - 1] || '', activeAt: Math.round(newestMtime(found.dir)),
+        archive: archiveSdd(found.dir, found.root) ?? rec?.archive,
+      }
+      if (JSON.stringify(next) !== JSON.stringify(rec)) { planRuns[file] = next; stateDirty = true }
+    } else if (rec?.state === 'running') {
+      planRuns[file] = { ...rec, state: 'executed', phase: undefined }
+      stateDirty = true
+    }
+  }
+  for (const file of Object.keys(planRuns)) {
+    if (fs.existsSync(file)) continue
+    const archive = planRuns[file].archive
+    if (archive && !archive.includes('/')) try { fs.rmSync(path.join(archiveRoot, archive), { recursive: true, force: true }) } catch {}
+    delete planRuns[file]
+    stateDirty = true
+  }
+}
 function loadState() {
   try {
     const st = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
@@ -370,6 +467,7 @@ function loadState() {
     Object.assign(compTouched, st.compTouched || {})
     Object.assign(compRecent, st.compRecent || {})
     Object.assign(fileHeat, st.fileHeat || {})
+    Object.assign(planRuns, st.planRuns || {})
   } catch {}
 }
 function saveState() {
@@ -377,10 +475,12 @@ function saveState() {
   stateDirty = false
   try {
     fs.mkdirSync(path.dirname(stateFile), { recursive: true })
-    fs.writeFileSync(stateFile, JSON.stringify({ repoPath: repo, port, activity, recentActivity, compTouched, compRecent, runs, fileHeat, cycles }))
+    fs.writeFileSync(stateFile, JSON.stringify({ repoPath: repo, port, activity, recentActivity, compTouched, compRecent, runs, fileHeat, cycles, planRuns }))
   } catch {}
 }
 loadState()
+trackExecution()
+parsed = parseTrackedPlan(planText, planPath) // state is loaded now: re-read completion of plans whose ledger is gone
 stateDirty = true // boot save: registers this repo for `plantrail up`
 setInterval(saveState, 15000).unref()
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stateDirty = true; saveState(); process.exit(0) })
@@ -469,17 +569,18 @@ function planStaleness() {
   const fresh = Date.now() - activity.at < 15 * 60e3
   return gap > 20 * 60e3 && fresh ? { stale: true, minutes: Math.round(gap / 60e3) } : { stale: false }
 }
+const execLabel = r => !r ? '' : r.state === 'running' ? ` · running ${r.done}/${r.total} · ${r.phase}` : ` · ${r.state} ${r.done}/${r.total}`
 function model() {
   if (treeDirty) { tree = buildTree(repo); treeDirty = false }
   return {
     boards, port,
     runs: liveRuns(),
     session, plan: parsed.nodes.map(n => n.level === 'component' ? { ...n, touchedAt: compTouched[n.id] || null, recent: compRecent[n.id] || [], filesList: compFilesFor(n.id) } : n), tree,
-    planTitle: parsed.title, planFile: path.relative(repo, planPath), planDir: path.relative(repo, planDir), superpowers: !!parsed.superpowers,
-    plans: availablePlans().map(file => ({ path: path.relative(repo, file), title: path.basename(file, '.md') })),
+    planTitle: parsed.title, planFile: path.relative(repo, planPath), planDir: path.relative(repo, path.dirname(planPath)), superpowers: !!parsed.superpowers,
+    plans: availablePlans().map(file => ({ path: path.relative(repo, file), title: (searchRoots().length > 1 ? path.basename(rootOf(file)) + ' · ' : '') + path.basename(file, '.md') + execLabel(planRuns[file]), exec: planRuns[file]?.state || null })),
     hasPlan: planText.length > 0, treeTruncated,
     activity, recentActivity, planMtime, handoffs, hotFiles: hotFiles(), cycles,
-    planStale: planStaleness(), lints: lintPlan(), hooksInstalled: hooksInstalled(),
+    planExec: planRuns[planPath] || null, planStale: planStaleness(), lints: lintPlan(), hooksInstalled: hooksInstalled(),
     now: Date.now(),
   }
 }
@@ -499,8 +600,9 @@ let planDebounce = null
 function refreshTrackedPlan() {
   clearTimeout(planDebounce)
   planDebounce = setTimeout(() => {
+    trackExecution()
     const plans = availablePlans()
-    if (!plans.includes(planPath)) planPath = plans[0] || path.join(planDir, '__no_plan_selected__.md')
+    if (!plans.includes(planPath)) planPath = plans[0] || path.join(repo, '__no_plan_selected__.md')
     planText = safeRead(planPath)
     parsed = parseTrackedPlan(planText, planPath)
     rebuildMatchers()
@@ -510,7 +612,7 @@ function refreshTrackedPlan() {
 }
 function isPlanOrLedgerPath(file) {
   const absolute = path.resolve(repo, file)
-  return absolute === planDir || absolute.startsWith(planDir + path.sep) || absolute === ledgerDir || absolute.startsWith(ledgerDir + path.sep)
+  return trackedDirs().some(d => absolute === d || absolute.startsWith(d + path.sep))
 }
 try {
   fs.watch(repo, { recursive: true }, (_ev, filename) => {
@@ -548,12 +650,30 @@ const isInsideRepo = target => {
   const relative = path.relative(repoPath, target)
   return relative === '' || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))
 }
-if (!isInsideRepo(planDir)) {
-  try { fs.watch(planDir, { recursive: true }, refreshTrackedPlan) } catch {}
+// plan/ledger folders outside the start dir (worktrees elsewhere) need their own watcher;
+// a slow rescan also picks up new repos, worktrees and folders created after startup
+const watchedDirs = new Set()
+function syncWatchers() {
+  for (const d of trackedDirs()) {
+    if (watchedDirs.has(d) || isInsideRepo(d) || !fs.existsSync(d)) continue
+    try {
+      const w = fs.watch(d, { recursive: true }, refreshTrackedPlan)
+      w.on('error', () => { w.close(); watchedDirs.delete(d) })
+      watchedDirs.add(d)
+    } catch {}
+  }
 }
-if (!isInsideRepo(ledgerDir)) {
-  try { fs.watch(ledgerDir, { recursive: true }, refreshTrackedPlan) } catch {}
+let trackedSignature = ''
+const signature = () => availablePlans().join('|') + '#' + ledgerFiles().map(l => l.file).join('|')
+function rescanTracked() {
+  rootsCache.at = 0
+  syncWatchers()
+  const next = signature()
+  if (next !== trackedSignature) { trackedSignature = next; refreshTrackedPlan() }
 }
+trackedSignature = signature()
+syncWatchers()
+setInterval(rescanTracked, 10000).unref()
 let lastActivityPush = 0
 function throttleBroadcast() {
   const now = Date.now()
@@ -705,7 +825,7 @@ const server = http.createServer((req, res) => {
   } else if (u.pathname === '/nudge') {
     const cwd = u.searchParams.get('cwd') || ''
     const st = planStaleness()
-    const mine = cwd === repo || cwd.startsWith(repo + path.sep)
+    const mine = searchRoots().some(r => cwd === r || cwd.startsWith(r + path.sep))
     res.writeHead(200, { 'content-type': 'text/plain' }).end(mine && st.stale
       ? `Note from Plantrail: ${path.relative(repo, planPath)} is ${st.minutes} minutes behind the code. Re-check task status and file paths against what you and other sessions actually changed.`
       : '')
@@ -771,7 +891,7 @@ function listenWithFallback(tries = 20) {
 }
 function onListen() {
   console.log(`plantrail · ${session.project} · ${path.relative(repo, planPath)} · http://localhost:${port}`)
-  if (!planText) console.log(`no Superpowers plan found in ${planDir} — use --plan-dir to select its folder`)
+  if (!planText) console.log(`no Superpowers plan found under ${repo} (looked in docs/superpowers/plans of the repo, its sub-repos and worktrees)`)
   if (openBrowser && !noOpen) {
     const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open'
     import('node:child_process').then(cp => cp.spawn(opener, [`http://localhost:${port}`], { stdio: 'ignore', detached: true }))
