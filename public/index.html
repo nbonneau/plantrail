@@ -126,6 +126,7 @@ body.hide-runs .runs,body.hide-runs .task-capsule.sess{display:none!important}
 .edge.plan-sequence{stroke:var(--success);stroke-width:1.5}
 .edge.plan-sequence.future{stroke:var(--faint);stroke-dasharray:2 7;stroke-linecap:round;opacity:.8}
 .runs.under-progress{z-index:7}
+.exec-card{padding:12px 14px;border:1px solid var(--accent);border-radius:14px;background:color-mix(in srgb,var(--accent) 10%,var(--overlay));box-shadow:0 12px 40px var(--shadow-strong);animation:reveal 500ms var(--ease) both}.exec-card.is-executed{border-color:var(--line);background:var(--overlay)}.exec-head{display:flex;justify-content:space-between;gap:12px;color:var(--dim);font-size:11px;letter-spacing:.06em;text-transform:uppercase}.exec-phase{display:flex;align-items:center;gap:8px;margin:6px 0 8px;color:var(--accent);font-size:17px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}.exec-card.is-executed .exec-phase{color:var(--dim)}.exec-phase i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--accent);animation:exec-pulse 1.4s ease-in-out infinite}.exec-phase b{font-weight:700}@keyframes exec-pulse{50%{opacity:.25}}@media(prefers-reduced-motion:reduce){.exec-phase i{animation:none}}.exec-row{display:flex;justify-content:space-between;gap:12px;color:var(--dim);font-size:12px}.exec-ledger{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:6px;color:var(--text);font-family:var(--mono,monospace);font-size:11.5px;line-height:1.4;overflow-wrap:anywhere}
 @media(max-width:720px){.graph-view.superpowers-graph #plan-progress-host{padding:8px 12px 0}#plan-progress-host .plan-progress{min-height:126px;padding:14px 12px}}
 </style>
 <style>
@@ -134,6 +135,101 @@ body.hide-runs .runs,body.hide-runs .task-capsule.sess{display:none!important}
 .plan-select option{color:var(--text);background:var(--surface)}
 .plan-select:disabled{cursor:default;opacity:.75}
 @media(max-width:720px){.plan-select{width:min(44vw,260px)}}
+</style>
+<style>
+.graph-view.stepper-view{display:flex;height:100%;min-height:0;flex-direction:column;overflow:hidden;overscroll-behavior:contain;touch-action:auto}
+.graph-view.stepper-view #plan-progress-host{position:sticky;top:0;z-index:6;flex:none;width:min(100%,680px);margin-left:130px;padding:12px 0 0;background:var(--bg)}
+.graph-view.stepper-view #plan-progress-host .plan-progress{position:relative;top:auto;margin:0;padding:16px 20px;border:0;background:none;box-shadow:none}
+.stepper-scroll{position:relative;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin}
+.stepper-timeline{position:relative;width:min(100%,980px);margin:0 auto;padding:24px 32px 64px}
+.stepper-entry{position:relative;display:flex;min-width:0}
+.stepper-spine{display:flex;flex:none;width:56px;flex-direction:column;align-items:center}
+.stepper-node{position:relative;z-index:1;display:grid;flex:none;width:36px;height:36px;place-items:center;border:2px solid var(--line);border-radius:50%;background:var(--line);color:var(--dim);font:700 13px/1 var(--mono);transition:all .4s cubic-bezier(.34,1.56,.64,1)}
+.stepper-entry.is-future .stepper-node{border-color:color-mix(in srgb,var(--accent) 34%,var(--line));background:var(--accent-bg);color:color-mix(in srgb,var(--accent) 58%,var(--dim))}
+.stepper-line{width:2px;flex:1;min-height:38px;margin:5px 0;background:var(--line)}
+.stepper-entry .stepper-line.is-future{width:0;background:none;border-left:2px dotted var(--faint)}
+.stepper-entry.is-done .stepper-node{border-color:var(--accent);background:var(--accent);color:#fff;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 14%,transparent),0 4px 16px color-mix(in srgb,var(--accent) 28%,transparent)}
+.stepper-entry.is-current .stepper-node{border-color:var(--accent);background:var(--bg);color:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 12%,transparent),0 4px 20px color-mix(in srgb,var(--accent) 30%,transparent);animation:stepper-glow 2s ease-in-out infinite}
+.stepper-entry.is-blocked .stepper-node{border-color:var(--danger);color:var(--danger)}
+.stepper-entry.is-done .stepper-line{background:var(--accent)}
+.stepper-entry.is-done .stepper-line.is-future{border-left-color:var(--accent)}
+@keyframes stepper-glow{0%,100%{box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 12%,transparent),0 4px 20px color-mix(in srgb,var(--accent) 30%,transparent)}50%{box-shadow:0 0 0 10px color-mix(in srgb,var(--accent) 7%,transparent),0 4px 28px color-mix(in srgb,var(--accent) 45%,transparent)}}
+.stepper-content{flex:1;min-width:0;max-width:600px;padding:4px 0 30px 16px}
+.stepper-entry:last-child .stepper-content{padding-bottom:0}
+.stepper-entry:last-child .stepper-line{display:none}
+.stepper-heading{display:block;width:100%;padding:0 0 4px;border:0;background:none;color:inherit;text-align:left;cursor:pointer}
+.stepper-heading:hover .stepper-title{color:var(--text)}
+.stepper-entry.is-selected .stepper-heading{border-radius:8px}
+.stepper-entry.is-selected .stepper-node{box-shadow:0 0 0 4px var(--hover)}
+.stepper-entry.is-selected.is-current .stepper-node{box-shadow:0 0 0 5px var(--accent-bg),0 0 0 8px var(--hover)}
+.stepper-entry.is-selected .stepper-title{color:var(--text)}
+.stepper-task-topline{display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-bottom:4px}
+.stepper-tag{display:block;margin:0;color:var(--faint);font:500 10px/14px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.stepper-task-meta{display:flex;flex:none;align-items:center;gap:7px;color:var(--dim);font:400 10px/14px var(--mono);font-variant-numeric:tabular-nums}
+.stepper-task-meta:before{content:"·";color:var(--faint)}
+.stepper-task-indicator{display:inline-flex;align-items:center;justify-content:center;min-width:14px;font-size:13px;font-weight:700}
+.stepper-task-indicator.active{color:var(--accent)}
+.stepper-task-indicator.done{color:var(--success)}
+.stepper-task-indicator.blocked{color:var(--danger)}
+.stepper-entry.is-current .stepper-task-meta{color:var(--accent)}
+.stepper-entry.is-done .stepper-task-meta{color:var(--success)}
+.stepper-entry.is-blocked .stepper-task-meta{color:var(--danger)}
+.stepper-entry.is-current .stepper-tag{color:var(--accent)}
+.stepper-entry.is-done .stepper-tag{color:var(--success)}
+.stepper-title{display:block;width:100%;overflow:hidden;color:var(--dim);font-size:16px;line-height:23px;font-weight:600;text-overflow:ellipsis;white-space:nowrap;transition:color 200ms var(--ease-out)}
+.stepper-state{display:flex;align-items:center;gap:7px;margin-top:5px;color:var(--faint);font-size:12px;line-height:17px}
+.stepper-entry.is-current .stepper-state{color:var(--accent)}
+.stepper-entry.is-done .stepper-state{color:var(--success)}
+.stepper-entry.is-blocked .stepper-state{color:var(--danger)}
+.stepper-summary{display:none;width:min(450px,100%);margin:12px 0 0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--card);animation:reveal 250ms var(--ease-out) both}
+.stepper-entry.is-open .stepper-summary{display:block;border-color:var(--faint);box-shadow:0 0 0 1px color-mix(in srgb,var(--faint) 30%,transparent)}
+.stepper-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--dim);font-size:12px}
+.stepper-summary-value{color:var(--text);font:600 13px/18px var(--mono);font-variant-numeric:tabular-nums}
+.stepper-summary-track{height:5px;margin-top:10px;overflow:hidden;border-radius:3px;background:var(--hover)}
+.stepper-summary-fill{height:100%;border-radius:inherit;background:var(--accent)}
+.stepper-entry.is-done .stepper-summary-fill{background:var(--success)}
+.stepper-summary-next{display:flex;align-items:center;gap:10px;min-width:0;margin-top:12px;color:var(--dim);font-size:12px;line-height:18px}
+.stepper-next-copy{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stepper-summary-next strong{color:var(--text);font-weight:550}
+.stepper-detail-open{display:grid;flex:none;width:28px;height:28px;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--dim);cursor:pointer;transition:color 180ms var(--ease-out),border-color 180ms var(--ease-out),background 180ms var(--ease-out)}
+.stepper-detail-open:hover{border-color:var(--accent);background:var(--accent-bg);color:var(--accent)}
+.stepper-detail-open svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.stepper-summary-activity{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--faint);font:400 11px/16px var(--mono)}
+.stepper-summary-file{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stepper-summary-time{flex:none;color:var(--accent)}
+.stepper-empty{padding:32px 0;color:var(--dim)}
+.stepper-drawer-layer{position:absolute;inset:0;z-index:9}
+.stepper-drawer-layer[hidden]{display:none}
+.stepper-drawer-backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgb(0 0 0/.48);cursor:default}
+.stepper-drawer{position:absolute;top:0;right:0;bottom:0;display:flex;width:min(480px,calc(100% - 24px));flex-direction:column;border-left:1px solid var(--line);background:var(--surface);box-shadow:-24px 0 64px var(--shadow-strong);animation:stepper-drawer-in 220ms var(--ease-out) both}
+@keyframes stepper-drawer-in{from{opacity:.5;transform:translateX(24px)}to{opacity:1;transform:none}}
+.stepper-drawer-head{display:flex;flex:none;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px 22px 18px;border-bottom:1px solid var(--line)}
+.stepper-drawer-heading{min-width:0}
+.stepper-drawer-kicker{color:var(--faint);font:500 11px/16px var(--mono);letter-spacing:.05em;text-transform:uppercase}
+.stepper-drawer-title{margin-top:7px;color:var(--text);font-size:19px;line-height:26px;font-weight:650;overflow-wrap:anywhere}
+.stepper-drawer-status{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--dim);font-size:12px}
+.stepper-drawer-close{display:grid;flex:none;width:32px;height:32px;place-items:center;border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--dim);font-size:20px;line-height:1;cursor:pointer}
+.stepper-drawer-close:hover{color:var(--text);background:var(--hover)}
+.stepper-drawer-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:20px 22px 28px}
+.stepper-drawer-progress-label{display:flex;justify-content:space-between;gap:12px;color:var(--dim);font-size:12px}
+.stepper-drawer-progress-label strong{color:var(--text);font:550 12px/16px var(--mono)}
+.stepper-drawer-progress{height:5px;margin-top:10px;overflow:hidden;border-radius:3px;background:var(--hover)}
+.stepper-drawer-progress-fill{height:100%;border-radius:inherit;background:var(--accent)}
+.stepper-drawer-task.is-done .stepper-drawer-progress-fill{background:var(--success)}
+.stepper-drawer-section{margin-top:24px}
+.stepper-drawer-section-title{margin-bottom:8px;color:var(--faint);font:500 11px/16px var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.stepper-drawer-activity{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:var(--raised);color:var(--dim);font:400 11px/16px var(--mono)}
+.stepper-drawer-activity-file{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stepper-drawer-activity-time{flex:none;color:var(--accent)}
+.stepper-drawer-step{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:start;gap:10px;padding:11px 0;color:var(--dim);font-size:12px;line-height:18px}
+.stepper-drawer-step+.stepper-drawer-step{border-top:1px solid var(--hover)}
+.stepper-drawer-step-icon{display:grid;width:16px;height:16px;margin-top:1px;place-items:center;border:1px solid var(--faint);border-radius:50%;color:var(--faint);font-size:10px}
+.stepper-drawer-step.is-done .stepper-drawer-step-icon{border-color:var(--success);background:var(--success);color:#fff}
+.stepper-drawer-step.is-active .stepper-drawer-step-icon{border:0}
+.stepper-drawer-step-title{min-width:0;overflow-wrap:anywhere}
+.stepper-drawer-step.is-done .stepper-drawer-step-title{color:var(--soft)}
+.stepper-drawer-step-state{color:var(--faint);font-size:10px;white-space:nowrap}
+@media(max-width:720px){.graph-view.stepper-view #plan-progress-host{padding:8px 0 0}.graph-view.stepper-view #plan-progress-host .plan-progress{padding:14px 12px}.stepper-scroll{padding-right:0}.stepper-timeline{padding:24px 18px 48px}.stepper-spine{width:44px}.stepper-content{padding-left:12px}.stepper-title{font-size:15px}}
 </style>
 </head>
 <body>
@@ -147,7 +243,7 @@ body.hide-runs .runs,body.hide-runs .task-capsule.sess{display:none!important}
 <script>
 let M=null,W=[],BP='',lastGraphKey='',graphPos={},regions={},minZoom=0.15,graphZoom=1,graphPan={x:0,y:0},graphSize={width:0,height:0},graphNeedsFit=true,panGesture=null
 const openGraphDetails=new Set(),openGraphTasks=new Set(),closedGraphTasks=new Set(),closedGraphDetails=new Set()
-let selectedTimelineTaskId='',selectedTimelinePlanFile='',timelineDetailsOpen=true
+let selectedTimelineTaskId='',selectedTimelinePlanFile='',stepperCurrentTaskId='',timelineDetailsOpen=false,stepperDrawerTaskId='',stepperDrawerTrigger=null
 function compLive(p){return p.status==='active'||(p.touchedAt&&Date.now()-p.touchedAt<60000)||((M&&M.runs)||[]).some(r=>!r.ended&&r.componentId===p.id)}
 function isUnfolded(p){const k=ns(p.id);if(closedGraphDetails.has(k))return false;return openGraphDetails.has(k)||compLive(p)}
 const openFolders=new Set(),closedFolders=new Set();let lastReveal=new Set()
@@ -377,50 +473,48 @@ function renderPlanProgress(){
   const percent=steps.length?pct(doneSteps,steps.length):pct(doneTasks,tasks.length)
   return `<div class="plan-progress" role="group" aria-label="Overall plan progress"><div class="plan-progress-main"><div class="plan-progress-head"><div class="plan-progress-copy"><span class="plan-progress-title">${esc(M.planTitle||M.planFile||'Plan progress')}</span><div class="plan-progress-counts"><span class="plan-progress-count">${tasks.length} tasks</span><span class="separator" aria-hidden="true">·</span><span class="plan-progress-count">${steps.length} steps</span></div></div><span class="plan-progress-percent">${percent}%</span></div><div class="plan-progress-track" role="progressbar" aria-label="Plan completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><div class="plan-progress-fill" style="width:${percent}%"></div></div><div class="plan-progress-footer"><span>Elapsed</span><span class="plan-progress-elapsed" id="plan-elapsed" title="Since the first recorded activity on this plan">Not started</span></div></div></div>`
 }
-function timelineDetailContent(task,index){
-  if(!task)return'<div class="timeline-detail-empty">No task selected.</div>'
-  const steps=M.plan.filter(n=>n.parent===task.id&&n.level==='task'&&!n.synthetic),done=steps.filter(step=>step.status==='done').length
-  const statusClass=task.status==='done'?'done':task.status==='active'?'active':task.status==='blocked'?'blocked':'pending'
-  const statusIcon=task.status==='done'?'✓':task.status==='active'?'<span class="timeline-spinner"></span>':task.status==='blocked'?'!':'<span class="timeline-pending-icon"></span>'
-  const activity=(task.recent||[])[0],activityAt=activity?.at||task.touchedAt||null
-  const stepRows=steps.map(step=>`<div class="timeline-step ${step.status}" role="listitem"><span class="timeline-step-icon" aria-hidden="true">${step.status==='done'?'✓':step.status==='active'?'<span class="timeline-spinner"></span>':''}</span><span class="timeline-step-title">${esc(step.title)}</span>${step.by?`<span class="agent-chip" style="color:${agentColor(step.by)}" title="${esc(step.by)}">${agentIcon(step.by)?`<svg viewBox="0 0 24 24" width="14" height="14"><path fill="${agentColor(step.by)}" d="${agentIcon(step.by)}"/></svg>`:agentGlyph(step.by)}</span>`:''}</div>`).join('')
-  return`<div class="timeline-detail-head"><div class="timeline-detail-top"><span class="timeline-detail-kicker">Task ${index+1}</span><span class="timeline-detail-status"><span class="timeline-status-icon ${statusClass}" aria-hidden="true">${statusIcon}</span>${task.status==='active'?'Editing':esc(statusLabel(task.status))}</span></div><h2 class="timeline-detail-title">${esc(task.title)}</h2><div class="timeline-detail-summary">${done} of ${steps.length} steps · ${esc(statusLabel(task.status))}</div><div class="timeline-detail-progress"><div class="timeline-detail-progress-fill" style="width:${pct(done,steps.length)}%;${task.status==='done'?'background:var(--success)':''}"></div></div>${activity?`<div class="timeline-detail-activity"><span class="timeline-detail-activity-file" title="${esc(activity.file)}">${esc(activity.file)}${activity.n>1?` ×${activity.n}`:''}</span><span class="timeline-detail-activity-time t-ago" data-at="${activityAt}">${ago(activityAt)}</span></div>`:''}</div><div class="timeline-detail-steps" role="list" aria-label="Steps for Task ${index+1}"><div class="timeline-step-list-title">Steps</div>${stepRows||'<div class="timeline-step"><span class="timeline-step-title">No checklist steps in this task.</span></div>'}</div>`
+function stepperTaskSummary(task,index){
+  const steps=M.plan.filter(n=>n.parent===task.id&&n.level==='task'&&!n.synthetic),done=steps.filter(step=>step.status==='done').length,active=steps.find(step=>step.status==='active'),next=active||steps.find(step=>step.status!=='done'),activity=(task.recent||[])[0],activityAt=activity?.at||task.touchedAt||null
+  const progress=pct(done,steps.length),detail=active?'In progress':next?'Next step':'Steps complete',stepTitle=next?.title.replace(/\*\*/g,'').replace(/`/g,'' )
+  return`<div class="stepper-summary"><div class="stepper-summary-head"><span>${detail}</span><span class="stepper-summary-value">${done} / ${steps.length} steps</span></div><div class="stepper-summary-track" role="progressbar" aria-label="Steps completed in task ${index+1}" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${done}"><div class="stepper-summary-fill" style="width:${progress}%"></div></div><div class="stepper-summary-next"><span class="stepper-next-copy">${next?`${active?'Current step':'Up next'}: `:''}<strong>${next?esc(stepTitle):'All task steps complete'}</strong></span><button class="stepper-detail-open" type="button" aria-label="Open full details for Task ${index+1}" title="Open task details" onclick="openStepperTaskDetails('${ns(task.id)}',event)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/></svg></button></div>${activity?`<div class="stepper-summary-activity"><span class="stepper-summary-file" title="${esc(activity.file)}">${esc(activity.file)}${activity.n>1?` ×${activity.n}`:''}</span></div>`:''}</div>`
 }
+function renderStepperTaskDrawer(){
+  const index=M?.plan?.filter(n=>n.level==='component').findIndex(n=>ns(n.id)===stepperDrawerTaskId)??-1,task=index>=0?M.plan.find(n=>n.level==='component'&&ns(n.id)===stepperDrawerTaskId):null
+  if(!task){stepperDrawerTaskId='';return'<div class="stepper-drawer-layer" id="stepper-drawer-layer" hidden></div>'}
+  const steps=M.plan.filter(n=>n.parent===task.id&&n.level==='task'&&!n.synthetic),done=steps.filter(step=>step.status==='done').length,progress=pct(done,steps.length),activity=(task.recent||[]).slice(0,8),status=task.status==='done'?'Complete':task.status==='active'?'In progress':task.status==='blocked'?'Blocked':'Upcoming',statusClass=task.status==='done'?'is-done':task.status==='blocked'?'is-blocked':task.status==='active'?'is-current':'is-future'
+  const rows=steps.map(step=>{const state=step.status==='done'?'is-done':step.status==='active'?'is-active':'is-pending',label=step.status==='done'?'Done':step.status==='active'?'In progress':'Pending',icon=step.status==='done'?'✓':step.status==='active'?'<span class="timeline-spinner"></span>':'',title=step.title.replace(/\*\*/g,'').replace(/`/g,'');return`<div class="stepper-drawer-step ${state}" role="listitem"><span class="stepper-drawer-step-icon" aria-hidden="true">${icon}</span><span class="stepper-drawer-step-title">${esc(title)}</span><span class="stepper-drawer-step-state">${step.by?`${esc(step.by)} · `:''}${label}</span></div>`}).join('')
+  const activityRows=activity.map(item=>`<div class="stepper-drawer-activity"><span class="stepper-drawer-activity-file" title="${esc(item.file)}">${esc(item.file)}${item.n>1?` ×${item.n}`:''}</span>${item.at?`<span class="stepper-drawer-activity-time t-ago" data-at="${item.at}">${ago(item.at)}</span>`:''}</div>`).join('')
+  return`<div class="stepper-drawer-layer" id="stepper-drawer-layer"><button class="stepper-drawer-backdrop" type="button" aria-label="Close task details" onclick="closeStepperTaskDetails()"></button><aside class="stepper-drawer stepper-drawer-task ${statusClass}" role="dialog" aria-modal="true" aria-labelledby="stepper-drawer-title"><header class="stepper-drawer-head"><div class="stepper-drawer-heading"><div class="stepper-drawer-kicker">Task ${index+1} · ${status}</div><h2 class="stepper-drawer-title" id="stepper-drawer-title">${esc(task.title)}</h2><div class="stepper-drawer-status">${done} of ${steps.length} steps complete</div></div><button class="stepper-drawer-close" id="stepper-drawer-close" type="button" aria-label="Close task details" onclick="closeStepperTaskDetails()">×</button></header><div class="stepper-drawer-body"><div class="stepper-drawer-progress-label"><span>Task progress</span><strong>${progress}%</strong></div><div class="stepper-drawer-progress" role="progressbar" aria-label="Task progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><div class="stepper-drawer-progress-fill" style="width:${progress}%"></div></div>${activityRows?`<section class="stepper-drawer-section"><h3 class="stepper-drawer-section-title">Recent activity</h3>${activityRows}</section>`:''}<section class="stepper-drawer-section"><h3 class="stepper-drawer-section-title">Steps (${steps.length})</h3><div role="list" aria-label="All steps for Task ${index+1}">${rows||'<div class="stepper-drawer-step">No steps in this task.</div>'}</div></section></div></aside></div>`
+}
+function openStepperTaskDetails(id,event){event?.stopPropagation();stepperDrawerTaskId=id;stepperDrawerTrigger=event?.currentTarget||null;const layer=$('stepper-drawer-layer');if(layer){layer.outerHTML=renderStepperTaskDrawer();$('stepper-drawer-close')?.focus()}}
+function closeStepperTaskDetails(){stepperDrawerTaskId='';const layer=$('stepper-drawer-layer');if(layer){layer.hidden=true;layer.innerHTML=''}const trigger=stepperDrawerTrigger;stepperDrawerTrigger=null;trigger?.focus?.()}
 function updateTimelineSelection(){
-  const items=document.querySelectorAll('.timeline-item[data-task]')
-  for(const item of items){const selected=item.dataset.task===selectedTimelineTaskId;item.classList.toggle('selected',selected);const button=item.querySelector('.timeline-head'),action=item.querySelector('.timeline-action');if(button)button.setAttribute('aria-expanded',String(selected&&timelineDetailsOpen));if(action)action.innerHTML=selected&&timelineDetailsOpen?'HIDE STEPS ←':'SHOW STEPS →'}
-  const pane=$('timeline-detail');if(pane)pane.innerHTML=timelineDetailsOpen?timelineDetailContent(M.plan.find(n=>ns(n.id)===selectedTimelineTaskId&&n.level==='component'),items.length?Array.from(items).findIndex(item=>item.dataset.task===selectedTimelineTaskId):0):'<div class="timeline-detail-empty">Steps hidden. Select a task to view its details.</div>'
+  for(const item of document.querySelectorAll('.stepper-entry[data-task]')){const selected=item.dataset.task===selectedTimelineTaskId,open=selected&&timelineDetailsOpen;item.classList.toggle('is-selected',selected);item.classList.toggle('is-open',open);item.querySelector('.stepper-heading')?.setAttribute('aria-expanded',String(open))}
 }
-function selectTimelineTask(id){selectedTimelineTaskId=id;timelineDetailsOpen=true;updateTimelineSelection()}
-function toggleTimelineDetails(id,event){event?.stopPropagation();if(selectedTimelineTaskId===id)timelineDetailsOpen=!timelineDetailsOpen;else{selectedTimelineTaskId=id;timelineDetailsOpen=true}updateTimelineSelection()}
+function selectTimelineTask(id){if(selectedTimelineTaskId===id)timelineDetailsOpen=!timelineDetailsOpen;else{selectedTimelineTaskId=id;timelineDetailsOpen=true}updateTimelineSelection()}
 function renderSuperpowersTimeline(){
-  const graph=$('graph'),tasks=M.plan.filter(n=>n.level==='component')
-  const activeIndex=tasks.findIndex(n=>n.status==='active'||n.status==='blocked')
-  const lastDone=tasks.reduce((last,n,i)=>n.status==='done'?i:last,-1),currentIndex=activeIndex>=0?activeIndex:lastDone
-  graph.classList.add('timeline-view')
-  if(selectedTimelinePlanFile!==M.planFile){selectedTimelinePlanFile=M.planFile;selectedTimelineTaskId='';timelineDetailsOpen=true}
-  if(!tasks.some(task=>ns(task.id)===selectedTimelineTaskId)){const initial=tasks[activeIndex>=0?activeIndex:0];selectedTimelineTaskId=initial?ns(initial.id):'';timelineDetailsOpen=true}
-  const items=tasks.map((task,index)=>{
-    const steps=M.plan.filter(n=>n.parent===task.id&&n.level==='task'&&!n.synthetic),doneSteps=steps.filter(step=>step.status==='done').length,stepPercent=pct(doneSteps,steps.length)
-    const isCurrent=index===activeIndex,selected=ns(task.id)===selectedTimelineTaskId
-    const stateClass=task.status==='done'?'done':task.status==='blocked'?'blocked':isCurrent?'current':'future'
-    const line=index<tasks.length-1?`<span class="timeline-link ${index+1<=currentIndex?'':'dotted'} ${index+1===activeIndex?'current-link':''}" aria-hidden="true"></span>`:''
-    const isTracked=task.status==='done'||task.status==='active',activity=(task.recent||[])[0],activityLabel=isTracked&&activity?`${activity.file.split('/').pop()}${activity.n>1?` ×${activity.n}`:''}`:''
-    const timerAt=isTracked?(activity?.at||task.touchedAt||null):null
-    const statusClass=task.status==='done'?'done':task.status==='active'?'active':task.status==='blocked'?'blocked':'pending'
-    const statusIcon=task.status==='done'?'✓':task.status==='active'?'<span class="timeline-spinner"></span>':task.status==='blocked'?'!':'<span class="timeline-pending-icon"></span>'
-    const progressLabel=`${doneSteps} of ${steps.length} steps · ${task.status==='active'?'In progress':statusLabel(task.status)}`
-    return`<article class="timeline-item ${stateClass}${selected?' selected':''}" data-task="${esc(ns(task.id))}">${line}<div class="timeline-card"><button class="timeline-head" type="button" aria-expanded="${selected&&timelineDetailsOpen}" onclick="selectTimelineTask('${ns(task.id)}')"><span class="timeline-topline"><span class="timeline-task-label"><span class="timeline-marker" aria-hidden="true">${index+1}</span><span class="timeline-kicker">Task ${index+1}</span></span><span class="timeline-status"><span class="timeline-status-icon ${statusClass}" aria-hidden="true">${statusIcon}</span>${task.status==='active'?'Editing':esc(statusLabel(task.status))}</span></span><span class="timeline-title" title="${esc(task.title)}">${esc(task.title)}</span><span class="timeline-info"><span class="timeline-summary">${progressLabel}</span>${activityLabel?`<span class="timeline-activity" title="${esc(activity.file)}">${esc(activityLabel)}</span>`:''}${timerAt?`<span class="timeline-timer t-ago" title="Time since last activity" data-at="${timerAt}">${ago(timerAt)}</span>`:''}</span><span class="timeline-progress-track" role="progressbar" aria-label="Steps completed" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${doneSteps}"><span class="timeline-progress-fill" style="display:block;width:${stepPercent}%"></span></span><span class="timeline-action" onclick="toggleTimelineDetails('${ns(task.id)}',event)">${selected&&timelineDetailsOpen?'HIDE STEPS ←':'SHOW STEPS →'}</span></button></div></article>`
+  const graph=$('graph'),tasks=M.plan.filter(n=>n.level==='component'),activeIndex=tasks.findIndex(n=>n.status==='active'||n.status==='blocked'),lastDone=tasks.reduce((last,task,index)=>task.status==='done'?index:last,-1),currentIndex=activeIndex>=0?activeIndex:lastDone
+  const planChanged=selectedTimelinePlanFile!==M.planFile,currentTask=activeIndex>=0?tasks[activeIndex]:null,currentTaskId=currentTask?ns(currentTask.id):'',shouldScrollToCurrent=!!currentTaskId&&(planChanged||currentTaskId!==stepperCurrentTaskId)
+  graph.classList.add('stepper-view')
+  if(planChanged){selectedTimelinePlanFile=M.planFile;selectedTimelineTaskId='';timelineDetailsOpen=false;stepperDrawerTaskId=''}
+  stepperCurrentTaskId=currentTaskId
+  if(!tasks.some(task=>ns(task.id)===selectedTimelineTaskId)){const initial=activeIndex>=0?tasks[activeIndex]:null;selectedTimelineTaskId=initial?ns(initial.id):'';timelineDetailsOpen=!!initial}
+  const entries=tasks.map((task,index)=>{
+    const steps=M.plan.filter(n=>n.parent===task.id&&n.level==='task'&&!n.synthetic),done=steps.filter(step=>step.status==='done').length,active=task.status==='active'||task.status==='blocked',state=task.status==='done'?'is-done':task.status==='blocked'?'is-blocked':active?'is-current':'is-future',selected=ns(task.id)===selectedTimelineTaskId,connectorClass=index>=currentIndex?'is-future':''
+    const stateLabel=task.status==='done'?'Complete':task.status==='active'?'In progress':task.status==='blocked'?'Blocked':'Upcoming',node=task.status==='done'?'✓':index+1,indicator=task.status==='active'?'<span class="timeline-spinner"></span>':task.status==='done'?'✓':task.status==='blocked'?'!':'',timer=['active','done','blocked'].includes(task.status)?(task.recent||[])[0]?.at||task.touchedAt||null:null
+    const open=selected&&timelineDetailsOpen
+    return`<article class="stepper-entry ${state}${selected?' is-selected':''}${open?' is-open':''}" data-task="${esc(ns(task.id))}"><div class="stepper-spine"><span class="stepper-node" aria-hidden="true">${node}</span><span class="stepper-line ${connectorClass}" aria-hidden="true"></span></div><div class="stepper-content"><button class="stepper-heading" type="button" aria-expanded="${open}" onclick="selectTimelineTask('${ns(task.id)}')"><span class="stepper-task-topline"><span class="stepper-tag">Task ${index+1}</span>${indicator?`<span class="stepper-task-meta"><span class="stepper-task-indicator ${task.status}" aria-label="${esc(stateLabel)}">${indicator}</span>${timer?`<span class="stepper-task-timer t-ago" title="Since last activity" data-at="${timer}">${ago(timer)}</span>`:''}</span>`:''}</span><span class="stepper-title" title="${esc(task.title)}">${esc(task.title)}</span><span class="stepper-state">${stateLabel} · ${done}/${steps.length} steps</span></button>${stepperTaskSummary(task,index)}</div></article>`
   }).join('')
-  const selectedIndex=tasks.findIndex(task=>ns(task.id)===selectedTimelineTaskId),selectedTask=tasks[selectedIndex]
-  graph.innerHTML=`${renderPlanProgress()}<div class="timeline-shell"><div class="timeline-list" aria-label="Plan task timeline">${items||'<div class="timeline-empty">No tasks in this plan yet.</div>'}</div><aside class="timeline-detail" id="timeline-detail" aria-label="Selected task details">${timelineDetailsOpen?timelineDetailContent(selectedTask,Math.max(0,selectedIndex)):'<div class="timeline-detail-empty">Steps hidden. Select a task to view its details.</div>'}</aside></div>`
+  graph.innerHTML=`<div id="plan-progress-host">${renderPlanProgress()}</div><div class="stepper-scroll"><div class="stepper-timeline" aria-label="Plan progression">${entries||'<div class="stepper-empty">No tasks in this plan.</div>'}</div></div>${renderStepperTaskDrawer()}`
+  if(shouldScrollToCurrent)requestAnimationFrame(()=>{const scroll=$('graph')?.querySelector('.stepper-scroll'),entry=[...(scroll?.querySelectorAll('.stepper-entry')||[])].find(item=>item.dataset.task===currentTaskId);if(scroll&&entry)scroll.scrollTop+=entry.getBoundingClientRect().top-scroll.getBoundingClientRect().top})
   const mini=$('minimap');if(mini)mini.style.display='none'
 }
 function renderGraph(){
-  $('graph').classList.remove('timeline-view')
+  $('graph').classList.remove('timeline-view','stepper-view')
   const boards=boardsAll()
   if(!boards.length)return
   if(boards.length===1&&M&&(!M.hasPlan||isSkeletonPlan())){renderZero();return}
+  if(M?.superpowers){renderSuperpowersTimeline();return}
   regions={};graphPos={}
   const GAP=160,ROWMAX=3600;let cx=80,cy=80,rowH=0
   let content=''
@@ -638,12 +732,22 @@ function syncRunsPosition(){
   const runs=$('runs'),banner=$('plan-progress-host')?.querySelector('.plan-progress'),graph=$('graph')
   if(!runs)return
   if(!M?.superpowers||!banner){runs.classList.remove('under-progress');for(const key of ['position','left','right','top','width','maxWidth','maxHeight','overflowY'])runs.style[key]='';graph?.style.removeProperty('--canvas-top');return}
-  const rect=banner.getBoundingClientRect(),top=rect.bottom+10
-  runs.classList.add('under-progress');runs.style.position='fixed';runs.style.left=`${rect.left}px`;runs.style.right='auto';runs.style.top=`${top}px`;runs.style.width=`${rect.width}px`;runs.style.maxWidth='none';runs.style.maxHeight=`${Math.max(96,Math.min(240,window.innerHeight-top-16))}px`;runs.style.overflowY='auto'
+  const rect=banner.getBoundingClientRect(),top=76
+  runs.classList.add('under-progress');runs.style.position='fixed';runs.style.left='auto';runs.style.right='24px';runs.style.top=`${top}px`;runs.style.width=`${Math.min(375,window.innerWidth-32)}px`;runs.style.maxWidth='none';runs.style.maxHeight='';runs.style.overflowY=''
   const graphTop=graph?.getBoundingClientRect().top||0,runBottom=runs.getBoundingClientRect().bottom
   const bannerBottom=rect.bottom-graphTop
   const canvasTop=Math.max(bannerBottom+12,overlays.runs&&!document.body.classList.contains('hide-runs')?runBottom-graphTop+16:0)
   graph?.style.setProperty('--canvas-top',`${canvasTop}px`)
+}
+function planExecCard(){
+  const e=M?.planExec
+  if(!e)return ''
+  const running=e.state==='running'
+  return `<div class="exec-card ${running?'is-running':'is-executed'}"><div class="exec-head"><span class="exec-label">Superpowers</span><span class="exec-tasks">${e.done}/${e.total} tasks</span></div>`
+    +`<div class="exec-phase">${running?'<i></i>':'<b>✓</b>'}${esc(running?e.phase:'Executed')}</div>`
+    +(e.activeAt?`<div class="exec-row"><span>Last activity</span><span><span class="t-ago" data-at="${e.activeAt}"></span> ago</span></div>`:'')
+    +(e.lastLine?`<div class="exec-ledger" title="${esc(e.lastLine)}">${esc(e.lastLine)}</div>`:'')
+    +`</div>`
 }
 function renderRuns(){
   const boards=boardsAll()
@@ -695,7 +799,7 @@ function renderRuns(){
       const path=stages.filter((t,i)=>t!==stages[i-1]).join(' → ')
       return `<div class="cycle-row"><span class="cycle-when">${day}</span><span class="cycle-what">${esc(c.__project)} · ${c.sessions.length} session${c.sessions.length>1?'s':''}${path?` · ${esc(path)}`:''}</span></div>`
     }).join('')
-  const out=html+hint+(past?`<div class="run-cycle" style="margin-top:10px">Past cycles</div>${past}`:'')
+  const out=planExecCard()+html+hint+(past?`<div class="run-cycle" style="margin-top:10px">Past cycles</div>${past}`:'')
   if(out!==lastRunsHtml){lastRunsHtml=out;$('runs').innerHTML=out}syncRunsPosition()
 }
 $('runs').addEventListener('click',e=>{const c=e.target.closest('.run-card');if(!c)return;const id=c.dataset.run
@@ -777,6 +881,7 @@ function renderObserved(){const now=Date.now(),boards=boardsAll()
   for(const el of document.querySelectorAll('[data-obs-ago]')){const key=el.dataset.obsAgo,ci=key.indexOf(':'),b=findB(key.slice(0,ci))
     const comp=b&&b.plan.find(x=>x.id===key.slice(ci+1)),a=comp&&(comp.recent||[])[0]
     if(a)el.textContent=ago(a.at)}}
+window.addEventListener('keydown',event=>{if(event.key==='Escape'&&stepperDrawerTaskId)closeStepperTaskDetails()})
 window.addEventListener('resize',()=>{renderMinimapViewport();syncRunsPosition()})
 $('graph').addEventListener('scroll',syncRunsPosition,{passive:true})
 </script>
